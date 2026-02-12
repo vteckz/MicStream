@@ -2,6 +2,17 @@
 
 A complete wireless Android Auto head unit system built on a Raspberry Pi 3B running [CrankshaftNG](https://github.com/nicka-car/crankshaft), with a companion Android app for microphone streaming and remote touchpad control.
 
+## Why This Exists
+
+Google's Android Auto updates in late 2024/2025 broke compatibility with OpenAuto-based head units like CrankshaftNG. The upstream projects (aasdk, OpenAuto, CrankshaftNG) are largely abandoned and no longer maintained, leaving DIY Pi-based head units non-functional with modern phones.
+
+This project is a working fork that patches the broken pieces back together, with additional solutions for common pain points:
+
+- **Broken wireless AA handshake** - The btservice WiFi credential exchange needed fixes to work with current Android Auto versions.
+- **No touchscreen support for HDMI setups** - Many people run CrankshaftNG with HDMI output to a car stereo or monitor that has no touchscreen. There was no way to interact with Android Auto without a physical touch panel. This project adds a virtual touchscreen controlled remotely from the phone via a companion app.
+- **No microphone in wireless mode** - Wireless AA doesn't pass phone microphone audio to the head unit, so Google Assistant and phone calls had no mic input. The MicStream app streams the phone's mic over UDP to fill this gap.
+- **Bluetooth pairings lost on every reboot** - CrankshaftNG's ramfs filesystem design wiped all BT link keys on power cycle, requiring manual re-pairing every time you started the car.
+
 ## Overview
 
 This project turns a Raspberry Pi 3B into a fully wireless Android Auto head unit with HDMI output. The phone connects via Bluetooth for the initial handshake, then switches to WiFi for the Android Auto data stream. Audio output goes through HDMI to the car stereo.
