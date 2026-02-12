@@ -1,0 +1,13 @@
+
+[Unit]
+Description=Restore Bluetooth Pairings
+Before=bluetooth.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/pi/bt_restore.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

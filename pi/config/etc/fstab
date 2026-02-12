@@ -1,0 +1,25 @@
+
+proc		/proc		proc			defaults,noatime,nodiratime		0	0
+/dev/mmcblk0p1	/boot		vfat			ro,defaults,noatime,nodiratime		0	2
+/dev/mmcblk0p2	/		ext4			defaults,noatime,nodiratime	0	1
+ramfs		/tmp			ramfs			size=128m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/tmp		ramfs			size=16m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/log		ramfs			size=16m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/spool		ramfs			size=8m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/lib/alsa		ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/lib/pulse		ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/lib/dbus		ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/lib/dhcp		ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/lib/dhcpcd5	ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/lib/samba		ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/var/cache/samba	ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/tmp/.backlight 	ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+#ramfs		/tmp/bluetooth		ramfs			size=1m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/tmp/.local-pi		ramfs			size=8m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/tmp/.config-pi		ramfs			size=8m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/tmp/.cache-pi		ramfs			size=16m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/tmp/.local-root	ramfs			size=8m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/tmp/.config-root	ramfs			size=8m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/tmp/.cache-root	ramfs			size=16m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/media/MYMEDIA		ramfs			size=16m,nodev,nosuid,noatime,nodiratime		0	0
+ramfs		/media/USBDRIVES	ramfs			size=16m,nodev,nosuid,noatime,nodiratime		0	0
