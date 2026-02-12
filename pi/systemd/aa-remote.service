@@ -1,0 +1,12 @@
+[Unit]
+Description=Android Auto Remote Touch Input
+After=openauto.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/pi/aa_remote.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

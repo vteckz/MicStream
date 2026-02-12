@@ -1,0 +1,12 @@
+[Unit]
+Description=Android Auto Clock Monitor
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/home/pi/aa_clock_monitor.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

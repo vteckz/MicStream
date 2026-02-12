@@ -1,0 +1,12 @@
+[Unit]
+Description=Bluetooth Disconnect Watchdog
+After=bluetooth.target btservice.service
+
+[Service]
+Type=simple
+ExecStart=/home/pi/bt_watchdog.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
