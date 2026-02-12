@@ -1,0 +1,17 @@
+[Unit]
+Description=Attach HCI UART Bluetooth
+Before=bluetooth.service
+After=dev-serial1.device
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/hciattach /dev/serial1 bcm43xx 921600 noflow
+ExecStartPost=/bin/sleep 1
+ExecStartPost=/usr/bin/hciconfig hci0 up
+ExecStartPost=/usr/bin/hciconfig hci0 piscan
+ExecStartPost=/usr/bin/hciconfig hci0 name CrankshaftNG
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

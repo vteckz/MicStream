@@ -1,0 +1,13 @@
+[Unit]
+Description=CrankshaftNG Safe System Upgrade (one-time)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/boot/safe-upgrade.sh
+TimeoutStartSec=900
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+# Add any directories, files, or patterns you don't want to be tracked by version control
+lib/
+bin/
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+aasdk_proto/*.pb.cc
+aasdk_proto/*.pb.h
+Makefile
+cmake_install.cmake
+install_manifest.txt
+build/**
+/cmake-build-*/
+.idea/
+/build-*/
+/buildenv/
+/protobuf/build/
+/protobuf/cmake-build-debug/
+/protobuf/.idea/
+/.vscode/
+/packages/
+**.backup

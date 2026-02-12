@@ -1,0 +1,13 @@
+[Unit]
+Description=Bluetooth Auto-Accept Agent
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/crankshaft/bt-autoagent.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

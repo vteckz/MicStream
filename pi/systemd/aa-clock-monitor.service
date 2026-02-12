@@ -1,6 +1,6 @@
 [Unit]
 Description=Android Auto Clock Monitor
-After=multi-user.target
+After=openauto.service
 
 [Service]
 Type=simple

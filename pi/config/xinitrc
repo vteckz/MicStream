@@ -1,0 +1,4 @@
+xset -dpms
+xset s off
+xset s noblank
+exec stdbuf -i0 -o0 -e0 autoapp --platform xcb >> /tmp/openauto.log

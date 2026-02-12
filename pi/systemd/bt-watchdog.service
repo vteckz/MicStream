@@ -1,6 +1,6 @@
 [Unit]
-Description=Bluetooth Disconnect Watchdog
-After=bluetooth.target btservice.service
+Description=Bluetooth Watchdog - restart AA on BT disconnect
+After=bluetooth.service btservice.service openauto.service
 
 [Service]
 Type=simple

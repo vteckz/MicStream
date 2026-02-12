@@ -6,3 +6,8 @@ local.properties
 *.iml
 .idea/
 .DS_Store
+*.o
+*.a
+*.so
+CMakeCache.txt
+CMakeFiles/
