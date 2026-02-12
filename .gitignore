@@ -11,3 +11,10 @@ local.properties
 *.so
 CMakeCache.txt
 CMakeFiles/
+
+# Pi-specific sensitive files
+bluetooth-pairings*.tar*
+bt-pairings-backup*.tar*
+*.png
+!pi/config/boot/crankshaft/camera-overlay.png
+!pi/config/boot/crankshaft/usbcamera-overlay.png
