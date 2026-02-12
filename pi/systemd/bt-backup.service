@@ -1,0 +1,13 @@
+
+[Unit]
+Description=Bluetooth Pairing Backup Monitor
+After=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/home/pi/bt_backup_monitor.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

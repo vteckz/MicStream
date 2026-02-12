@@ -1,0 +1,14 @@
+
+[Unit]
+Description=Auto-launch Spotify on AA connect
+After=openauto.service
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/usr/bin/python3 -u /home/pi/aa_autolaunch.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
