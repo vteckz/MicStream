@@ -1,0 +1,5 @@
+# Overclock settings
+arm_freq=1400
+over_voltage=2
+sdram_freq=500
+gpu_mem=192

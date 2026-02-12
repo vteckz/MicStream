@@ -1,0 +1,5 @@
+# Android mic stream (UDP receiver feeds into this sink)
+load-module module-null-sink sink_name=android_mic sink_properties=device.description=AndroidMicSink rate=16000 channels=1 format=s16le
+load-module module-remap-source source_name=android_mic_source master=android_mic.monitor source_properties=device.description=Android-Phone-Mic
+set-default-source android_mic_source
+set-default-sink alsa_output.platform-bcm2835_audio.digital-stereo
