@@ -1,0 +1,12 @@
+[Unit]
+Description=Register fake BT profiles for Android Auto
+After=btservice.service bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/crankshaft/bt-fake-profiles.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+ Description=Crankshaft Android Auto Bluetooth Service
+ After=bluetooth.service openauto.service
+
+[Service]
+Environment=LD_LIBRARY_PATH=/usr/local/lib
+ Type=simple
+ WorkingDirectory=/home/pi
+ ExecStartPre=/bin/sleep 5
+ExecStart=/usr/local/bin/btservice
+ Restart=always
+ StartLimitInterval=60
+ RestartSec=2
+ StartLimitBurst=3
+
+[Install]
+ WantedBy=multi-user.target
