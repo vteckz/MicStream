@@ -1,6 +1,6 @@
 # MicStream + CrankshaftNG Wireless Android Auto
 
-A complete wireless Android Auto head unit system built on a Raspberry Pi 3B running [CrankshaftNG](https://github.com/nicka-car/crankshaft), with a companion Android app for microphone streaming and remote touchpad control.
+A complete wireless Android Auto head unit system built on a Raspberry Pi 3B/4 running [CrankshaftNG](https://github.com/nicka-car/crankshaft), with a companion Android app for microphone streaming and remote touchpad control.
 
 ## Why This Exists
 
@@ -15,7 +15,7 @@ This project is a working fork that patches the broken pieces back together, wit
 
 ## Overview
 
-This project turns a Raspberry Pi 3B into a fully wireless Android Auto head unit with HDMI output. The phone connects via Bluetooth for the initial handshake, then switches to WiFi for the Android Auto data stream. Audio output goes through HDMI to the car stereo.
+This project turns a Raspberry Pi 3B or Pi 4 into a fully wireless Android Auto head unit with HDMI output. The phone connects via Bluetooth for the initial handshake, then switches to WiFi for the Android Auto data stream. Audio output goes through HDMI to the car stereo.
 
 **Key features:**
 - Wireless Android Auto over WiFi (no USB cable needed)
@@ -30,7 +30,7 @@ This project turns a Raspberry Pi 3B into a fully wireless Android Auto head uni
 ```
 ┌─────────────────┐     BT RFCOMM      ┌──────────────────────┐
 │                 │◄───────────────────►│                      │
-│  Android Phone  │     WiFi (AP)       │  Raspberry Pi 3B     │
+│  Android Phone  │     WiFi (AP)       │  Raspberry Pi 3B/4   │
 │  (Samsung)      │◄───────────────────►│  CrankshaftNG        │
 │                 │                     │                      │
 │  MicStream App  │──UDP:8000 (mic)───►│  udp_mic_receiver.py │
@@ -75,11 +75,11 @@ Key files:
 |--------|-------------|
 | `aa_remote.py` | Virtual touchscreen via uinput - receives UDP touch events and injects them as Linux input events. Creates a 1024x768 multitouch device. |
 | `udp_mic_receiver.py` | Receives UDP mic audio and pipes it to PulseAudio via `pacat` into the `android_mic` null sink. |
-| `aa_clock_monitor.sh` | CPU governor manager - sets `performance` (1400MHz) when AA is connected, `ondemand` when idle, `powersave` on thermal throttle. |
+| `aa_clock_monitor.sh` | CPU governor manager - sets `performance` (1400MHz Pi 3 / 2000MHz Pi 4) when AA is connected, `ondemand` when idle, `powersave` on thermal throttle. |
 | `bt_watchdog.sh` | Monitors BT connection to phone - restarts OpenAuto when phone disconnects so it returns to the waiting screen. |
+| `call_audio.sh` | BT HFP call audio routing - switches BT profile to HFP and sets up PulseAudio loopback from BT source to HDMI output. Usage: `bash call_audio.sh start/stop` |
+| `sco_enhancer.py` | SCO audio jitter buffer for call audio (optional, used by call_audio.sh pipeline). |
 | `aa_autolaunch.py` | (Experimental) Auto-taps the media button when AA connects to open Spotify. |
-| `bt_restore.sh` | (Disabled) Legacy BT pairing restore from backup tar. |
-| `bt_backup_monitor.sh` | (Disabled) Legacy BT pairing backup to `/boot`. |
 
 ### Pi Systemd Services (`pi/systemd/`)
 
@@ -96,7 +96,7 @@ Key custom services:
 
 | File | Description |
 |------|-------------|
-| `boot/config.txt` | RPi boot config - HDMI settings, overclock (1400MHz/192MB GPU) |
+| `boot/config.txt` | RPi boot config - HDMI settings, overclock (Pi 3: 1400MHz/192MB GPU, Pi 4: 2000MHz/256MB GPU) |
 | `boot/crankshaft/crankshaft_env.sh` | CrankshaftNG environment - enables BT, hotspot, dev mode |
 | `boot/crankshaft/openauto.ini` | OpenAuto settings - resolution, FPS, touchscreen, wireless AA |
 | `etc/fstab` | Filesystem mounts - **modified** to persist BT pairings (see below) |
@@ -157,15 +157,36 @@ Forked source code for the Android Auto SDK and OpenAuto display server. Key mod
 
 ### 5. CPU Overclock and Thermal Management
 
-**Problem:** Pi 3B was sluggish running AA at default clocks.
+**Problem:** Default clock speeds are too slow for smooth AA rendering.
 
 **Fix:**
-- Overclocked to 1400MHz with `over_voltage=2`, 500MHz SDRAM, 192MB GPU memory
+- **Pi 3B:** Overclocked to 1400MHz with `over_voltage=2`, 500MHz SDRAM, 192MB GPU memory
+- **Pi 4:** Overclocked to 2000MHz with `over_voltage=6`, 256MB GPU memory
 - Dynamic clock management: full speed when AA is connected, ondemand when idle, throttle on high temps
 
 **Files:**
 - `pi/config/boot/config.txt` (overclock settings)
 - `pi/scripts/aa_clock_monitor.sh`
+
+### 7. Phone Call Audio (BT HFP)
+
+**Problem:** During phone calls, audio stays on the phone instead of routing through the car speakers.
+
+**Fix:** `call_audio.sh` switches the BT profile from A2DP (music) to HFP (hands-free), then sets up a PulseAudio loopback from the BT HFP source directly to the HDMI sink. A TX loopback sends silence back to the BT sink to keep the SCO bidirectional link alive.
+
+```bash
+# During a phone call:
+bash /home/pi/call_audio.sh start
+
+# When call ends:
+bash /home/pi/call_audio.sh stop
+```
+
+**Note:** The Pi 4's built-in BCM43455 Bluetooth has a hardware limitation (SCO MTU 64:1) that causes choppy call audio. A USB Bluetooth adapter is recommended for better call quality.
+
+**Files:**
+- `pi/scripts/call_audio.sh`
+- `pi/scripts/sco_enhancer.py`
 
 ### 6. WiFi AP Configuration
 
@@ -212,7 +233,30 @@ The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
 
 ### Pi Setup
 
-The Pi runs CrankshaftNG (a Raspberry Pi distro for Android Auto). The configs and scripts in `pi/` should be deployed to their respective locations on the Pi:
+#### Option 1: Pre-built Image (Recommended)
+
+Flash a pre-built image to your SD card:
+
+- **Pi 3B:** [v1.0 Release](https://github.com/vteckz/MicStream/releases/tag/v1.0)
+- **Pi 4:** [v1.1 Release](https://github.com/vteckz/MicStream/releases/tag/v1.1)
+
+```bash
+xz -d -c crankshaft-micstream-pi4.img.xz | sudo dd of=/dev/sdX bs=4M status=progress
+```
+
+#### Option 2: Automated Setup Script
+
+Flash a stock CrankshaftNG image, boot the Pi, SSH in, then run:
+
+```bash
+curl -sL https://raw.githubusercontent.com/vteckz/MicStream/master/pi/setup.sh | sudo bash
+```
+
+The script auto-detects Pi 3 vs Pi 4 and applies the appropriate config (overclock, HDMI sink, BT settings).
+
+#### Option 3: Manual Setup
+
+Deploy the configs and scripts in `pi/` to their respective locations:
 
 ```
 pi/config/etc/fstab          → /etc/fstab
@@ -240,10 +284,15 @@ sudo systemctl daemon-reload
 
 ## Hardware
 
+Supported boards:
 - **Raspberry Pi 3B** (BCM2837, 1GB RAM)
+- **Raspberry Pi 4** (BCM2711, 1GB+ RAM)
+
+Other requirements:
 - **HDMI display/car stereo** with audio passthrough
 - **Android phone** with Android Auto support
-- USB power supply (2.5A+ recommended for stable overclock)
+- USB power supply (2.5A+ for Pi 3, 3A+ for Pi 4)
+- (Optional) **USB Bluetooth adapter** - recommended for Pi 4 call audio quality (built-in BCM43455 has SCO limitations)
 
 ## Network Topology
 

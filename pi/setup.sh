@@ -32,13 +32,7 @@ echo "Detected: $PI_MODEL"
 
 if echo "$PI_MODEL" | grep -qi "Pi 4"; then
     PI_VER=4
-    echo "WARNING: Pi 4 support is experimental."
-    echo "         The OMX video backend needs porting to GStreamer."
-    echo "         See: https://github.com/vteckz/MicStream/issues/1"
-    echo ""
-    read -p "Continue anyway? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then exit 1; fi
+    echo "Pi 4 detected - full support."
 elif echo "$PI_MODEL" | grep -qi "Pi 5"; then
     echo "ERROR: Pi 5 is not yet supported."
     echo "       See: https://github.com/vteckz/MicStream/issues/1"
@@ -104,9 +98,12 @@ install_file "scripts/udp_mic_receiver.py" "/home/pi/udp_mic_receiver.py" "755"
 install_file "scripts/aa_clock_monitor.sh" "/home/pi/aa_clock_monitor.sh" "755"
 install_file "scripts/bt_watchdog.sh" "/home/pi/bt_watchdog.sh" "755"
 install_file "scripts/aa_autolaunch.py" "/home/pi/aa_autolaunch.py" "755"
+install_file "scripts/call_audio.sh" "/home/pi/call_audio.sh" "755"
+install_file "scripts/sco_enhancer.py" "/home/pi/sco_enhancer.py" "755"
 
 chown pi:pi /home/pi/aa_remote.py /home/pi/udp_mic_receiver.py \
-    /home/pi/aa_clock_monitor.sh /home/pi/bt_watchdog.sh /home/pi/aa_autolaunch.py
+    /home/pi/aa_clock_monitor.sh /home/pi/bt_watchdog.sh /home/pi/aa_autolaunch.py \
+    /home/pi/call_audio.sh /home/pi/sco_enhancer.py
 
 # =============================================
 # 3. Install systemd services
@@ -237,8 +234,9 @@ if [ "$PI_VER" = "4" ]; then
         systemctl disable hciattach 2>/dev/null || true
         echo "  Disabled hciattach (not needed on Pi 4)"
     fi
-    echo "  NOTE: Pi 4 video output requires OMX->GStreamer port"
-    echo "        See: https://github.com/vteckz/MicStream/issues/1"
+    echo "  Pi 4 adjustments applied"
+    echo "  NOTE: For phone call audio, run: bash /home/pi/call_audio.sh start"
+    echo "        USB BT adapter recommended for better call audio quality"
 else
     echo "  Pi 3 - no additional adjustments needed"
 fi
