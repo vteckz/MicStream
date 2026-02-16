@@ -56,7 +56,7 @@ namespace f1x::openauto::autoapp::service {
       return;
     } else if (error == boost::asio::error::operation_aborted || cancelled_) {
       promise_->reject(aasdk::error::Error(aasdk::error::ErrorCode::OPERATION_ABORTED));
-    } else if (pingsCount_ - pongsCount_ > 4) {
+    } else if (pingsCount_ - pongsCount_ > 10) {
       promise_->reject(aasdk::error::Error());
     } else {
       promise_->resolve();

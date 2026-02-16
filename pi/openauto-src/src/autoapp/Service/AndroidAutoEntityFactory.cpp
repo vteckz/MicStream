@@ -62,7 +62,7 @@ namespace f1x {
                                                                            ioService_, transport, cryptor)));
 
           auto serviceList = serviceFactory_.create(messenger);
-          auto pinger(std::make_shared<Pinger>(ioService_, 5000));
+          auto pinger(std::make_shared<Pinger>(ioService_, 10000));
           return std::make_shared<AndroidAutoEntity>(ioService_, std::move(cryptor), std::move(transport),
                                                      std::move(messenger), configuration_, std::move(serviceList),
                                                      std::move(pinger));
