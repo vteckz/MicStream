@@ -187,12 +187,12 @@ BOOTEOF
             echo "  Applied Pi 3 overclock (1400MHz) and HDMI settings"
         fi
     elif [ "$PI_VER" = "4" ]; then
-        if ! grep -q 'arm_freq=2000' "$BOOT_CONFIG"; then
+        if ! grep -q 'arm_freq=1850' "$BOOT_CONFIG"; then
             cat >> "$BOOT_CONFIG" << 'BOOTEOF'
 
 # MicStream settings (Pi 4)
-arm_freq=2000
-over_voltage=6
+arm_freq=1850
+over_voltage=4
 gpu_mem=256
 
 # HDMI display fix
@@ -200,7 +200,7 @@ hdmi_force_hotplug=1
 hdmi_drive=2
 disable_overscan=1
 BOOTEOF
-            echo "  Applied Pi 4 overclock (2000MHz) and HDMI settings"
+            echo "  Applied Pi 4 overclock (1850MHz) and HDMI settings"
         fi
     fi
 

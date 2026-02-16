@@ -75,7 +75,7 @@ Key files:
 |--------|-------------|
 | `aa_remote.py` | Virtual touchscreen via uinput - receives UDP touch events and injects them as Linux input events. Creates a 1024x768 multitouch device. |
 | `udp_mic_receiver.py` | Receives UDP mic audio and pipes it to PulseAudio via `pacat` into the `android_mic` null sink. |
-| `aa_clock_monitor.sh` | CPU governor manager - sets `performance` (1400MHz Pi 3 / 2000MHz Pi 4) when AA is connected, `ondemand` when idle, `powersave` on thermal throttle. |
+| `aa_clock_monitor.sh` | CPU governor manager - sets `performance` (1400MHz Pi 3 / 1850MHz Pi 4) when AA is connected, `ondemand` when idle, `powersave` on thermal throttle. |
 | `bt_watchdog.sh` | Monitors BT connection to phone - restarts OpenAuto when phone disconnects so it returns to the waiting screen. |
 | `call_audio.sh` | BT HFP call audio routing - switches BT profile to HFP and sets up PulseAudio loopback from BT source to HDMI output. Usage: `bash call_audio.sh start/stop` |
 | `sco_enhancer.py` | SCO audio jitter buffer for call audio (optional, used by call_audio.sh pipeline). |
@@ -96,7 +96,7 @@ Key custom services:
 
 | File | Description |
 |------|-------------|
-| `boot/config.txt` | RPi boot config - HDMI settings, overclock (Pi 3: 1400MHz/192MB GPU, Pi 4: 2000MHz/256MB GPU) |
+| `boot/config.txt` | RPi boot config - HDMI settings, overclock (Pi 3: 1400MHz/192MB GPU, Pi 4: 1850MHz/256MB GPU) |
 | `boot/crankshaft/crankshaft_env.sh` | CrankshaftNG environment - enables BT, hotspot, dev mode |
 | `boot/crankshaft/openauto.ini` | OpenAuto settings - resolution, FPS, touchscreen, wireless AA |
 | `etc/fstab` | Filesystem mounts - **modified** to persist BT pairings (see below) |
@@ -161,7 +161,7 @@ Forked source code for the Android Auto SDK and OpenAuto display server. Key mod
 
 **Fix:**
 - **Pi 3B:** Overclocked to 1400MHz with `over_voltage=2`, 500MHz SDRAM, 192MB GPU memory
-- **Pi 4:** Overclocked to 2000MHz with `over_voltage=6`, 256MB GPU memory
+- **Pi 4:** Overclocked to 1850MHz with `over_voltage=6`, 256MB GPU memory
 - Dynamic clock management: full speed when AA is connected, ondemand when idle, throttle on high temps
 
 **Files:**
