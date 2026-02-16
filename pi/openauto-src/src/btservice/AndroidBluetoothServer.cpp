@@ -168,9 +168,8 @@ namespace f1x::openauto::btservice {
     response.set_password(
         configuration_->getParamFromFile("/etc/hostapd/hostapd.conf", "wpa_passphrase").toStdString());
     response.set_bssid(QNetworkInterface::interfaceFromName("wlan0").hardwareAddress().toStdString());
-    // TODO: AAP uses different values than WiFiProjection....
     response.set_security_mode(
-        aap_protobuf::service::wifiprojection::message::WifiSecurityMode::WPA2_ENTERPRISE);
+        aap_protobuf::service::wifiprojection::message::WifiSecurityMode::WPA2_PERSONAL);
     response.set_access_point_type(aap_protobuf::service::wifiprojection::message::AccessPointType::STATIC);
 
     sendMessage(response, 3);
