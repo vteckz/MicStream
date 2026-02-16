@@ -1,0 +1,17 @@
+[Unit]
+Description=UDP Call Audio Receiver for HDMI
+After=pulseaudio.service openauto.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pi
+Environment=PULSE_SERVER=/run/pulse/native
+ExecStartPre=/bin/sleep 3
+ExecStart=/usr/bin/python3 /home/pi/udp_call_receiver.py 8002
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
