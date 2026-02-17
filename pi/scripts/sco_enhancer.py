@@ -330,6 +330,7 @@ class ScoAudioHandler:
     def _tx_loop(self):
         """Read from mic, encode, send to SCO socket."""
         frames_encoded = 0
+        write_errors = 0
         try:
             if self.codec == CODEC_MSBC and self._msbc_codesize:
                 chunk_size = self._msbc_codesize
@@ -366,6 +367,10 @@ class ScoAudioHandler:
                 if not pcm:
                     break
 
+                if frames_encoded == 0:
+                    log.info("TX first pcm: %d bytes, hex=%s",
+                             len(pcm), pcm[:16].hex())
+
                 if self.codec == CODEC_MSBC:
                     sco_data = self._encode_msbc(pcm)
                 else:
@@ -382,8 +387,11 @@ class ScoAudioHandler:
                         if e.errno == 110:  # ETIMEDOUT
                             time.sleep(0.01)
                             continue
-                        log.error("TX write() failed: errno=%d %s", e.errno, e)
-                        break
+                        write_errors += 1
+                        if write_errors <= 3:
+                            log.error("TX write() failed: errno=%d %s", e.errno, e)
+                        if write_errors > 10:
+                            break
         except Exception as e:
             log.error("TX error: %s", e)
         finally:
