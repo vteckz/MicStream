@@ -118,10 +118,11 @@ install_file "systemd/aa-clock-monitor.service" "/etc/systemd/system/aa-clock-mo
 install_file "systemd/bt-watchdog.service" "/etc/systemd/system/bt-watchdog.service"
 install_file "systemd/aa-autolaunch.service" "/etc/systemd/system/aa-autolaunch.service"
 install_file "systemd/bt-scan-manager.service" "/etc/systemd/system/bt-scan-manager.service"
+install_file "systemd/sco-enhancer.service" "/etc/systemd/system/sco-enhancer.service"
 
 systemctl daemon-reload
-systemctl enable aa-remote aa-clock-monitor udp-mic-receiver bt-watchdog bt-scan-manager 2>/dev/null
-echo "  Enabled: aa-remote, aa-clock-monitor, udp-mic-receiver, bt-watchdog, bt-scan-manager"
+systemctl enable aa-remote aa-clock-monitor udp-mic-receiver bt-watchdog bt-scan-manager sco-enhancer 2>/dev/null
+echo "  Enabled: aa-remote, aa-clock-monitor, udp-mic-receiver, bt-watchdog, bt-scan-manager, sco-enhancer"
 
 # =============================================
 # 4. Configure PulseAudio (mic sink + HDMI)
@@ -141,6 +142,13 @@ load-module module-remap-source source_name=android_mic_source master=android_mi
 set-default-source android_mic_source
 PAEOF
         echo "  Added android_mic sink to PulseAudio"
+    fi
+
+    # Switch BT to headset=native so PulseAudio doesn't register a CVSD-only
+    # agent with ofono (our sco-enhancer registers mSBC+CVSD instead)
+    if grep -q 'headset=ofono' "$PA_CONF"; then
+        sed -i 's/headset=ofono/headset=native/' "$PA_CONF"
+        echo "  Switched PulseAudio BT to headset=native (SCO enhancer handles HFP)"
     fi
 
     # Set HDMI as default audio output
@@ -302,8 +310,7 @@ if [ "$PI_VER" = "4" ]; then
         echo "  Disabled hciattach (not needed on Pi 4)"
     fi
     echo "  Pi 4 adjustments applied"
-    echo "  NOTE: For phone call audio, run: bash /home/pi/call_audio.sh start"
-    echo "        USB BT adapter recommended for better call audio quality"
+    echo "  Phone call audio uses mSBC wideband via SCO enhancer (automatic)"
 else
     echo "  Pi 3 - no additional adjustments needed"
 fi
