@@ -1,0 +1,12 @@
+[Unit]
+Description=BT Scan Manager - toggles ISCAN/PSCAN based on AA session state
+After=bluetooth.service openauto.service
+
+[Service]
+Type=simple
+ExecStart=/home/pi/bt_scan_manager.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

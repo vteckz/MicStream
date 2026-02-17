@@ -64,7 +64,7 @@ install_file() {
 # =============================================
 # 1. Fix Bluetooth persistence (CRITICAL)
 # =============================================
-echo "[1/7] Fixing Bluetooth persistence..."
+echo "[1/9] Fixing Bluetooth persistence..."
 
 # Unmount ramfs bluetooth if mounted
 if mount | grep -q '/tmp/bluetooth'; then
@@ -91,7 +91,7 @@ echo "  Created persistent /var/lib/bluetooth"
 # 2. Install scripts
 # =============================================
 echo ""
-echo "[2/7] Installing scripts..."
+echo "[2/9] Installing scripts..."
 
 install_file "scripts/aa_remote.py" "/home/pi/aa_remote.py" "755"
 install_file "scripts/udp_mic_receiver.py" "/home/pi/udp_mic_receiver.py" "755"
@@ -100,32 +100,34 @@ install_file "scripts/bt_watchdog.sh" "/home/pi/bt_watchdog.sh" "755"
 install_file "scripts/aa_autolaunch.py" "/home/pi/aa_autolaunch.py" "755"
 install_file "scripts/call_audio.sh" "/home/pi/call_audio.sh" "755"
 install_file "scripts/sco_enhancer.py" "/home/pi/sco_enhancer.py" "755"
+install_file "scripts/bt_scan_manager.sh" "/home/pi/bt_scan_manager.sh" "755"
 
 chown pi:pi /home/pi/aa_remote.py /home/pi/udp_mic_receiver.py \
     /home/pi/aa_clock_monitor.sh /home/pi/bt_watchdog.sh /home/pi/aa_autolaunch.py \
-    /home/pi/call_audio.sh /home/pi/sco_enhancer.py
+    /home/pi/call_audio.sh /home/pi/sco_enhancer.py /home/pi/bt_scan_manager.sh
 
 # =============================================
 # 3. Install systemd services
 # =============================================
 echo ""
-echo "[3/7] Installing systemd services..."
+echo "[3/9] Installing systemd services..."
 
 install_file "systemd/aa-remote.service" "/etc/systemd/system/aa-remote.service"
 install_file "systemd/udp-mic-receiver.service" "/etc/systemd/system/udp-mic-receiver.service"
 install_file "systemd/aa-clock-monitor.service" "/etc/systemd/system/aa-clock-monitor.service"
 install_file "systemd/bt-watchdog.service" "/etc/systemd/system/bt-watchdog.service"
 install_file "systemd/aa-autolaunch.service" "/etc/systemd/system/aa-autolaunch.service"
+install_file "systemd/bt-scan-manager.service" "/etc/systemd/system/bt-scan-manager.service"
 
 systemctl daemon-reload
-systemctl enable aa-remote aa-clock-monitor udp-mic-receiver bt-watchdog 2>/dev/null
-echo "  Enabled: aa-remote, aa-clock-monitor, udp-mic-receiver, bt-watchdog"
+systemctl enable aa-remote aa-clock-monitor udp-mic-receiver bt-watchdog bt-scan-manager 2>/dev/null
+echo "  Enabled: aa-remote, aa-clock-monitor, udp-mic-receiver, bt-watchdog, bt-scan-manager"
 
 # =============================================
 # 4. Configure PulseAudio (mic sink + HDMI)
 # =============================================
 echo ""
-echo "[4/7] Configuring PulseAudio..."
+echo "[4/9] Configuring PulseAudio..."
 
 PA_CONF="/etc/pulse/system.pa"
 if [ -f "$PA_CONF" ]; then
@@ -158,7 +160,7 @@ fi
 # 5. Apply boot config overclocks
 # =============================================
 echo ""
-echo "[5/7] Applying boot config..."
+echo "[5/9] Applying boot config..."
 
 BOOT_CONFIG="/boot/config.txt"
 if [ -f "$BOOT_CONFIG" ]; then
@@ -211,22 +213,87 @@ fi
 # 6. Configure WiFi hotspot
 # =============================================
 echo ""
-echo "[6/7] Checking WiFi hotspot config..."
+echo "[6/9] Checking WiFi hotspot config..."
 
 HOSTAPD_CONF="/etc/hostapd/hostapd.conf"
 if [ -f "$HOSTAPD_CONF" ]; then
     echo "  hostapd.conf exists - SSID: $(grep '^ssid=' $HOSTAPD_CONF | cut -d= -f2)"
     echo "  Default password: $(grep '^wpa_passphrase=' $HOSTAPD_CONF | cut -d= -f2)"
     echo "  Change password in $HOSTAPD_CONF if needed"
+
+    # Disable U-APSD (causes bursty WiFi delivery with power-saving clients)
+    if ! grep -q 'uapsd_advertisement_enabled=0' "$HOSTAPD_CONF"; then
+        echo "uapsd_advertisement_enabled=0" >> "$HOSTAPD_CONF"
+        echo "  Disabled U-APSD for consistent WiFi delivery"
+    fi
+
+    # Set DTIM period to 1 (minimum buffering for power-save clients)
+    if ! grep -q 'dtim_period=1' "$HOSTAPD_CONF"; then
+        echo "dtim_period=1" >> "$HOSTAPD_CONF"
+        echo "  Set DTIM period to 1"
+    fi
 else
     echo "  WARNING: hostapd.conf not found - WiFi AP may not work"
+fi
+
+# =============================================
+# 7. TCP and network optimizations
+# =============================================
+echo ""
+echo "[7/9] Applying TCP/network optimizations..."
+
+SYSCTL_CONF="/etc/sysctl.conf"
+
+# Enable BBR congestion control (handles BCM43455 BT/WiFi latency spikes
+# much better than cubic, which misinterprets radio switching as congestion)
+if ! grep -q 'tcp_congestion_control=bbr' "$SYSCTL_CONF"; then
+    cat >> "$SYSCTL_CONF" << 'SYSEOF'
+
+# MicStream TCP optimizations for AA streaming over BCM43455 WiFi
+net.ipv4.tcp_congestion_control=bbr
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_no_metrics_save=1
+net.ipv4.tcp_mtu_probing=1
+net.ipv4.tcp_rmem=4096 87380 16777216
+net.ipv4.tcp_wmem=4096 65536 16777216
+net.core.wmem_max=16777216
+SYSEOF
+    echo "  Applied BBR congestion control and TCP buffer tuning"
+fi
+
+# Ensure BBR kernel module loads at boot
+if [ ! -f /etc/modules-load.d/bbr.conf ]; then
+    echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+    echo "  Enabled tcp_bbr module autoload"
+fi
+
+# Apply sysctl now
+modprobe tcp_bbr 2>/dev/null || true
+sysctl -p "$SYSCTL_CONF" 2>/dev/null || true
+echo "  TCP optimizations active"
+
+# =============================================
+# 8. OpenAuto video settings (720p 30fps)
+# =============================================
+echo ""
+echo "[8/9] Configuring OpenAuto video..."
+
+OA_INI="/boot/crankshaft/openauto.ini"
+if [ -f "$OA_INI" ]; then
+    mount -o remount,rw /boot 2>/dev/null || true
+    # Set 720p (Resolution=1) to match typical car displays
+    sed -i 's/^Resolution=.*/Resolution=1/' "$OA_INI" 2>/dev/null
+    # Set 30fps (FPS=0) for reliable decode on Pi 4
+    sed -i 's/^FPS=.*/FPS=0/' "$OA_INI" 2>/dev/null
+    mount -o remount,ro /boot 2>/dev/null || true
+    echo "  Set video to 720p @ 30fps"
 fi
 
 # =============================================
 # 7. Pi 4 specific adjustments
 # =============================================
 echo ""
-echo "[7/7] Platform-specific adjustments..."
+echo "[9/9] Platform-specific adjustments..."
 
 if [ "$PI_VER" = "4" ]; then
     # Pi 4 doesn't need hciattach (BT is USB, not UART)
@@ -258,9 +325,8 @@ echo "     > scan on"
 echo "     > pair <PHONE_MAC>"
 echo "     > trust <PHONE_MAC>"
 echo ""
-echo "  2. On first connect, manually join the"
-echo "     CRANKSHAFT-NG WiFi from your phone"
-echo "     (workaround for WPA2 bug)"
+echo "  2. Phone should auto-connect to CRANKSHAFT-NG"
+echo "     WiFi after BT pairing (WPA2_PERSONAL)"
 echo ""
 echo "  3. Install MicStream app on your phone"
 echo "     (build from app/ or download APK)"
