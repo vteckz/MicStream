@@ -38,8 +38,11 @@ This project turns a Raspberry Pi 3B or Pi 4 into a fully wireless Android Auto 
 │                 │                     │                      │
 │                 │     AA TCP:5000     │  OpenAuto (autoapp)  │
 │                 │◄───────────────────►│        │             │
-└─────────────────┘                     │        ▼ HDMI        │
-                                        │  ┌──────────┐       │
+│                 │                     │        ▼ HDMI        │
+│  Phone (AG)     │  BT HFP SCO (mSBC) │  sco_enhancer.py     │
+│                 │◄───────────────────►│  (ofono agent)       │
+│                 │  call audio ↔ HDMI  │        │             │
+└─────────────────┘                     │  ┌──────────┐       │
                                         │  │Car Stereo│       │
                                         │  └──────────┘       │
                                         └──────────────────────┘
@@ -77,8 +80,9 @@ Key files:
 | `udp_mic_receiver.py` | Receives UDP mic audio and pipes it to PulseAudio via `pacat` into the `android_mic` null sink. |
 | `aa_clock_monitor.sh` | CPU governor manager - sets `performance` (1400MHz Pi 3 / 1850MHz Pi 4) when AA is connected, `ondemand` when idle, `powersave` on thermal throttle. |
 | `bt_watchdog.sh` | Monitors BT connection to phone - restarts OpenAuto when phone disconnects so it returns to the waiting screen. |
-| `call_audio.sh` | BT HFP call audio routing - switches BT profile to HFP and sets up PulseAudio loopback from BT source to HDMI output. Usage: `bash call_audio.sh start/stop` |
-| `sco_enhancer.py` | SCO audio jitter buffer for call audio (optional, used by call_audio.sh pipeline). |
+| `sco_enhancer.py` | Custom ofono HandsfreeAudioAgent with mSBC wideband (16kHz) support. Handles SCO socket lifecycle including deferred accept, mSBC encode/decode via libsbc, and bidirectional audio routing (call audio → HDMI, mic → SCO TX). |
+| `udp_call_receiver.py` | Receives call audio from MicStream Android app via UDP port 8002 and plays on HDMI output. |
+| `call_audio.sh` | Legacy BT HFP call audio routing (superseded by sco_enhancer.py). |
 | `aa_autolaunch.py` | (Experimental) Auto-taps the media button when AA connects to open Spotify. |
 
 ### Pi Systemd Services (`pi/systemd/`)
@@ -90,6 +94,7 @@ Key custom services:
 - `udp-mic-receiver.service` - Mic audio UDP receiver
 - `aa-clock-monitor.service` - CPU clock management
 - `bt-watchdog.service` - BT disconnect handler
+- `sco-enhancer.service` - mSBC wideband call audio via ofono
 - `hotspot.service` - WiFi AP (hostapd + dnsmasq)
 
 ### Pi Configs (`pi/config/`)
@@ -168,25 +173,30 @@ Forked source code for the Android Auto SDK and OpenAuto display server. Key mod
 - `pi/config/boot/config.txt` (overclock settings)
 - `pi/scripts/aa_clock_monitor.sh`
 
-### 7. Phone Call Audio (BT HFP)
+### 7. Phone Call Audio (mSBC Wideband via ofono)
 
-**Problem:** During phone calls, audio stays on the phone instead of routing through the car speakers.
+**Problem:** During phone calls, audio stays on the phone instead of routing through the car speakers. PulseAudio's built-in HFP support only handles CVSD (8kHz narrowband) and conflicts with ofono's profile management.
 
-**Fix:** `call_audio.sh` switches the BT profile from A2DP (music) to HFP (hands-free), then sets up a PulseAudio loopback from the BT HFP source directly to the HDMI sink. A TX loopback sends silence back to the BT sink to keep the SCO bidirectional link alive.
+**Fix:** A custom ofono `HandsfreeAudioAgent` (`sco_enhancer.py`) that:
+- Registers with ofono supporting both CVSD and mSBC codecs
+- Handles SCO socket lifecycle including **BT_DEFER_SETUP** (kernel deferred accept)
+- Decodes mSBC H2-framed audio (16kHz wideband) via libsbc for playback on HDMI
+- Encodes mic audio to mSBC for SCO TX
+- Auto-sets HCI voice to Transparent mode (0x0063) for mSBC passthrough on startup
 
-```bash
-# During a phone call:
-bash /home/pi/call_audio.sh start
+PulseAudio's bluetooth module is **disabled** (`module-bluetooth-discover` commented out in `system.pa`) to prevent conflicts. ofono is the sole HFP handler.
 
-# When call ends:
-bash /home/pi/call_audio.sh stop
-```
+**Key technical details:**
+- ofono uses `BT_DEFER_SETUP` on its SCO listening socket. The agent must call `recv()` on the delivered fd to trigger `sco_conn_defer_accept()` in the kernel, which sends HCI Accept SCO Connection to the BT controller. Without this, the socket stays in `BT_CONNECT2` state and all I/O returns `ENOTCONN`.
+- SCO SEQPACKET sockets require `libc.recv()` via ctypes - Python's `os.read()` returns empty on BT SCO sockets.
+- mSBC frames are 60 bytes: `[01] [08/38/C8/F8] [AD ...SBC_data(57B)...] [FF]`
 
-**Note:** The Pi 4's built-in BCM43455 Bluetooth has a hardware limitation (SCO MTU 64:1) that causes choppy call audio. A USB Bluetooth adapter is recommended for better call quality.
+**Known limitation:** During phone calls, Android silences all non-telephony mic capture at the OS level. A USB microphone on the Pi is needed for SCO TX (uplink audio to the remote caller). Without it, the remote party cannot hear you.
 
 **Files:**
-- `pi/scripts/call_audio.sh`
 - `pi/scripts/sco_enhancer.py`
+- `pi/systemd/sco-enhancer.service`
+- `pi/config/etc/pulse/system.pa` (bluetooth module disabled)
 
 ### 6. WiFi AP Configuration
 
@@ -199,13 +209,11 @@ The Pi runs a WiFi access point that the phone connects to for the AA data strea
 
 ## Known Issues
 
-### btservice WPA2_ENTERPRISE Bug
+### Call Microphone (SCO TX Uplink)
 
-The `btservice` component (which handles BT-to-WiFi handshake for wireless AA) hardcodes `WPA2_ENTERPRISE` as the WiFi security mode in its protobuf response, but the actual AP uses `WPA2-PSK` (personal). This means on a completely fresh pairing, the phone may fail to auto-connect to WiFi.
+During phone calls, Android silences all non-telephony microphone capture at the kernel level. The MicStream app successfully streams the phone's mic to the Pi outside of calls (for Google Assistant), but during cellular calls it receives silence. This is a hard Android platform restriction that cannot be bypassed by any audio source, mode, or device routing change.
 
-**Workaround:** After first BT pairing, manually connect to the `CRANKSHAFT-NG` WiFi network on the phone. Once saved, it will auto-connect on subsequent sessions.
-
-**Root cause:** `openauto-src/src/btservice/AndroidBluetoothServer.cpp` line 172-173 hardcodes `WPA2_ENTERPRISE` instead of `WPA2_PERSONAL` (value 5 in `WifiSecurityMode.proto`).
+**Workaround:** Plug a USB microphone or USB sound card with mic input into the Pi. The sco_enhancer will automatically use it via PulseAudio's `android_mic_source` (or reconfigure to use the USB mic source directly).
 
 ### Samsung Dual BT MAC Addresses
 
@@ -292,7 +300,8 @@ Other requirements:
 - **HDMI display/car stereo** with audio passthrough
 - **Android phone** with Android Auto support
 - USB power supply (2.5A+ for Pi 3, 3A+ for Pi 4)
-- (Optional) **USB Bluetooth adapter** - recommended for Pi 4 call audio quality (built-in BCM43455 has SCO limitations)
+- (Recommended) **USB microphone or USB sound card with mic** - needed for call uplink audio (other party hearing you). Android blocks mic streaming during calls.
+- The Pi 4's built-in BCM43455 Bluetooth supports mSBC wideband (16kHz) call audio via the sco_enhancer.
 
 ## Network Topology
 
