@@ -144,11 +144,14 @@ PAEOF
         echo "  Added android_mic sink to PulseAudio"
     fi
 
-    # Switch BT to headset=native so PulseAudio doesn't register a CVSD-only
-    # agent with ofono (our sco-enhancer registers mSBC+CVSD instead)
-    if grep -q 'headset=ofono' "$PA_CONF"; then
-        sed -i 's/headset=ofono/headset=native/' "$PA_CONF"
-        echo "  Switched PulseAudio BT to headset=native (SCO enhancer handles HFP)"
+    # Disable PA's bluetooth entirely so ofono is the SOLE HFP handler.
+    # With headset=native, PA registers HFP-HF with BlueZ causing conflict.
+    # With headset=ofono, PA registers as ofono audio agent, conflicting with sco-enhancer.
+    # Solution: comment out module-bluetooth-discover so PA ignores BT completely.
+    # AA audio goes through USB/WiFi (not A2DP), call audio through sco-enhancer.
+    if grep -q '^load-module module-bluetooth-discover' "$PA_CONF"; then
+        sed -i 's/^load-module module-bluetooth-discover.*/#load-module module-bluetooth-discover/' "$PA_CONF"
+        echo "  Disabled PulseAudio bluetooth (ofono handles HFP exclusively)"
     fi
 
     # Set HDMI as default audio output

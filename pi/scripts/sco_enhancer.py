@@ -6,8 +6,8 @@ Replaces PulseAudio's CVSD-only ofono audio agent with one that supports
 mSBC (16kHz wideband), dramatically improving phone call audio quality.
 
 Architecture:
-  PulseAudio (headset=native) handles A2DP/HSP
-  ofono handles HFP profile registration with BlueZ
+  PulseAudio bluetooth disabled (no module-bluetooth-discover)
+  ofono handles HFP profile registration with BlueZ exclusively
   This agent registers with ofono as HandsfreeAudioAgent with mSBC+CVSD
   On call: receives SCO fd, decodes mSBC via libsbc, pipes to PulseAudio
 
@@ -62,12 +62,35 @@ _libc = ctypes.CDLL("libc.so.6", use_errno=True)
 _libc.recv.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
 _libc.recv.restype = ctypes.c_ssize_t
 
+_libc_getsockopt = _libc.getsockopt
+_libc_getsockopt.argtypes = [
+    ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint),
+]
+_libc_getsockopt.restype = ctypes.c_int
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s sco-enhancer: %(message)s",
     stream=sys.stdout,
 )
 log = logging.getLogger("sco-enhancer")
+
+import socket as _socket
+
+def _sd_notify(msg):
+    """Send systemd notify message (Type=notify readiness signal)."""
+    addr = os.getenv("NOTIFY_SOCKET")
+    if not addr:
+        return
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM)
+    try:
+        if addr[0] == '@':
+            addr = '\0' + addr[1:]
+        sock.connect(addr)
+        sock.sendall(msg.encode())
+    finally:
+        sock.close()
 
 
 def sco_recv(fd, bufsize):
@@ -176,6 +199,41 @@ class ScoAudioHandler:
         """Start audio processing."""
         self.running = True
 
+        # Kickstart the SCO data path: some BT controllers (BCM43455) don't
+        # begin routing SCO data to the host until a write is attempted.
+        # The write will fail (ENOTCONN) but triggers the controller's
+        # SCO data routing. This mirrors what the diagnostic version did
+        # accidentally - those early write attempts activated the data path.
+        for attempt in range(5):
+            try:
+                os.write(self.fd, b'\x00' * 60)
+                log.info("SCO kickstart write succeeded on attempt %d", attempt + 1)
+                break
+            except OSError as e:
+                if e.errno == 107:  # ENOTCONN
+                    time.sleep(0.05)
+                    continue
+                log.info("SCO kickstart write: errno=%d %s", e.errno, e.strerror)
+                break
+        else:
+            log.info("SCO kickstart: all writes got ENOTCONN (expected)")
+
+        # Check socket health
+        try:
+            err = ctypes.c_int(0)
+            errlen = ctypes.c_uint(4)
+            ret = _libc_getsockopt(
+                self.fd, 1, 4,  # SOL_SOCKET=1, SO_ERROR=4
+                ctypes.byref(err), ctypes.byref(errlen),
+            )
+            if ret == 0 and err.value != 0:
+                log.warning("SCO socket error before start: errno=%d %s",
+                            err.value, os.strerror(err.value))
+            else:
+                log.info("SCO socket healthy (SO_ERROR=0)")
+        except Exception as e:
+            log.warning("Could not check socket state: %s", e)
+
         # Playback: SCO → speakers (HDMI)
         self._pa_play = subprocess.Popen(
             [
@@ -211,6 +269,8 @@ class ScoAudioHandler:
     def _rx_loop(self):
         """Read from SCO socket, decode, send to speakers."""
         frames_decoded = 0
+        timeout_count = 0
+        max_timeouts = 3  # Retry SCO link up to 3 times on timeout
         try:
             while self.running:
                 # select() waits for SCO socket to be readable (also handles
@@ -228,11 +288,23 @@ class ScoAudioHandler:
                 except OSError as e:
                     if e.errno == 11:  # EAGAIN
                         continue
+                    if e.errno == 110:  # ETIMEDOUT
+                        timeout_count += 1
+                        if timeout_count <= max_timeouts:
+                            log.warning("RX recv() timed out (%d/%d), retrying...",
+                                        timeout_count, max_timeouts)
+                            time.sleep(0.1)
+                            continue
+                        log.error("RX recv() timed out %d times, giving up", timeout_count)
+                        break
                     log.error("RX recv() failed: errno=%d %s", e.errno, e)
                     break
 
                 if not data:
                     continue  # SCO may return empty before data flows
+
+                # Reset timeout counter once data starts flowing
+                timeout_count = 0
 
                 if frames_decoded == 0:
                     log.info("RX first packet: %d bytes, hex=%s",
@@ -264,8 +336,30 @@ class ScoAudioHandler:
             else:
                 chunk_size = 48  # CVSD: ~3ms of 8kHz audio
 
+            # Wait briefly for parec to connect to PA source
+            time.sleep(0.2)
+
             while self.running:
                 if not self._pa_rec or not self._pa_rec.stdout:
+                    break
+
+                # Check if parec process died
+                if self._pa_rec.poll() is not None:
+                    log.warning("TX: parec exited (code=%d), mic unavailable",
+                                self._pa_rec.returncode)
+                    # Send silence to keep SCO link alive
+                    silence = b'\x00' * chunk_size
+                    while self.running:
+                        if self.codec == CODEC_MSBC:
+                            sco_data = self._encode_msbc(silence)
+                        else:
+                            sco_data = silence
+                        if sco_data:
+                            try:
+                                os.write(self.fd, sco_data)
+                            except OSError:
+                                break
+                        time.sleep(0.0075)  # ~7.5ms per mSBC frame
                     break
 
                 pcm = self._pa_rec.stdout.read(chunk_size)
@@ -283,6 +377,9 @@ class ScoAudioHandler:
                         frames_encoded += 1
                     except OSError as e:
                         if e.errno == 107:  # ENOTCONN - socket not ready yet
+                            time.sleep(0.01)
+                            continue
+                        if e.errno == 110:  # ETIMEDOUT
                             time.sleep(0.01)
                             continue
                         log.error("TX write() failed: errno=%d %s", e.errno, e)
@@ -410,15 +507,31 @@ class HfAudioAgent(dbus.service.Object):
         if self._handler:
             self._handler.stop()
 
-        # take() transfers fd ownership from D-Bus to us, dup() ensures
-        # the fd survives any D-Bus cleanup after this method returns
+        # take() transfers fd ownership from D-Bus to us
         if hasattr(sco_fd, "take"):
             raw_fd = sco_fd.take()
         else:
             raw_fd = int(sco_fd)
 
-        fd = os.dup(raw_fd)
-        os.close(raw_fd)
+        # CRITICAL: ofono uses BT_DEFER_SETUP on its SCO listening socket.
+        # The kernel accepts incoming SCO into BT_CONNECT2 state (deferred).
+        # We MUST call recv() to trigger sco_conn_defer_accept() in the kernel,
+        # which sends HCI Accept SCO Connection to the BT controller.
+        # Without this, the socket stays in BT_CONNECT2 and all I/O gets ENOTCONN.
+        buf = ctypes.create_string_buffer(256)
+        n = _libc.recv(raw_fd, buf, 256, 0)
+        if n == 0:
+            log.info("SCO deferred accept triggered, waiting for HCI connection...")
+        elif n > 0:
+            log.info("SCO accept: got %d bytes immediately", n)
+        else:
+            err = ctypes.get_errno()
+            log.warning("SCO accept recv: errno=%d (%s)", err, os.strerror(err))
+
+        # Wait for HCI Connection Complete event (typically <50ms)
+        time.sleep(0.2)
+
+        fd = raw_fd
         log.info("SCO fd=%d (codec=%s)", fd, codec_name)
 
         self._handler = ScoAudioHandler(fd, codec)
@@ -438,9 +551,25 @@ class HfAudioAgent(dbus.service.Object):
 
 # ─── Main ───
 
+def _set_hci_voice_transparent():
+    """Set HCI voice setting to Transparent (0x0063) for mSBC passthrough.
+    Without this, the BT controller decodes SCO audio as CVSD instead of
+    passing raw mSBC frames to the host."""
+    try:
+        subprocess.run(
+            ["hcitool", "cmd", "0x03", "0x0026", "0x63", "0x00"],
+            capture_output=True, timeout=5,
+        )
+        log.info("HCI voice setting: 0x0063 (Transparent)")
+    except Exception as e:
+        log.warning("Failed to set HCI voice: %s", e)
+
+
 def main():
     if not _load_libsbc():
         log.warning("Continuing without mSBC - only CVSD available")
+
+    _set_hci_voice_transparent()
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
@@ -466,10 +595,10 @@ def main():
             if "ServiceUnknown" in err:
                 log.info("Waiting for ofono... (%d/30)", attempt + 1)
                 time.sleep(2)
-            elif "Busy" in err:
+            elif "Busy" in err or "InUse" in err:
                 log.error(
                     "Another agent already registered. "
-                    "Ensure PulseAudio uses headset=native in "
+                    "Ensure module-bluetooth-discover is disabled in "
                     "/etc/pulse/system.pa"
                 )
                 sys.exit(1)
